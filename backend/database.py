@@ -42,14 +42,16 @@ def init_database():
             mac_address TEXT,
             hostname TEXT,
             vendor TEXT,
-            device_type TEXT DEFAULT 'Unknown',
+            device_type TEXT DEFAULT 'unknown',
             status TEXT DEFAULT 'Online',
             risk_level TEXT DEFAULT 'Low',
             last_seen TEXT,
             ping_latency_ms REAL,
             os_guess TEXT,
             interface TEXT,
-            first_seen TEXT
+            first_seen TEXT,
+            classification_source TEXT DEFAULT 'unknown',
+            classification_confidence TEXT DEFAULT 'Low'
         );
 
         CREATE TABLE IF NOT EXISTS alerts (
@@ -138,6 +140,42 @@ def init_database():
             executed_by TEXT DEFAULT 'System Auto-Mitigate'
         );
 
+        CREATE TABLE IF NOT EXISTS rl_decisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            state_json TEXT,
+            action_id INTEGER NOT NULL,
+            action_name TEXT NOT NULL,
+            action_confidence REAL,
+            expected_reward REAL,
+            target_ip TEXT,
+            attacker_ip TEXT,
+            victim_ip TEXT,
+            attack_type TEXT,
+            threat_score REAL,
+            anomaly_score REAL,
+            response_result TEXT,
+            explainability_json TEXT,
+            policy_version TEXT,
+            mode TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS rl_evaluations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            policy_version TEXT,
+            episodes INTEGER,
+            rl_avg_reward REAL,
+            rule_avg_reward REAL,
+            rl_mitigation_rate REAL,
+            rule_mitigation_rate REAL,
+            rl_fp_rate REAL,
+            rule_fp_rate REAL,
+            reward_improvement REAL,
+            disruption_reduction REAL,
+            metrics_json TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_packets_timestamp ON packets(timestamp);
         CREATE INDEX IF NOT EXISTS idx_devices_ip ON devices(ip_address);
         CREATE INDEX IF NOT EXISTS idx_alerts_timestamp ON alerts(timestamp);
@@ -148,7 +186,19 @@ def init_database():
         CREATE INDEX IF NOT EXISTS idx_logs_source ON logs(source);
         CREATE INDEX IF NOT EXISTS idx_response_rules_enabled ON response_rules(enabled);
         CREATE INDEX IF NOT EXISTS idx_mitigation_actions_timestamp ON mitigation_actions(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_rl_decisions_timestamp ON rl_decisions(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_rl_evaluations_timestamp ON rl_evaluations(timestamp);
     """)
+
+    # Run safe column migrations for existing devices table
+    try:
+        cursor.execute("ALTER TABLE devices ADD COLUMN classification_source TEXT DEFAULT 'unknown'")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE devices ADD COLUMN classification_confidence TEXT DEFAULT 'Low'")
+    except Exception:
+        pass
 
     cursor.execute("SELECT COUNT(*) FROM response_rules")
     if cursor.fetchone()[0] == 0:
@@ -224,37 +274,91 @@ async def get_packet_count_since(since: str) -> int:
 
 async def upsert_device(ip_address: str, mac_address: str = None,
                         hostname: str = None, vendor: str = None,
-                        device_type: str = "Unknown", status: str = "Online",
+                        device_type: str = "unknown", status: str = "Online",
                         risk_level: str = None, ping_latency_ms: float = None,
-                        os_guess: str = None, interface: str = None):
+                        os_guess: str = None, interface: str = None,
+                        classification_source: str = "unknown",
+                        classification_confidence: str = "Low"):
     now = datetime.now().isoformat()
     dev_id = f"dev-{ip_address.replace('.', '-')}"
     r_level = risk_level or "Low"
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            INSERT INTO devices (id, ip_address, mac_address, hostname, vendor, device_type, status, risk_level, last_seen, ping_latency_ms, os_guess, interface, first_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO devices (id, ip_address, mac_address, hostname, vendor, device_type, status, risk_level, last_seen, ping_latency_ms, os_guess, interface, first_seen, classification_source, classification_confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ip_address) DO UPDATE SET
                 mac_address = COALESCE(excluded.mac_address, devices.mac_address),
                 hostname = COALESCE(excluded.hostname, devices.hostname),
                 vendor = COALESCE(excluded.vendor, devices.vendor),
-                device_type = COALESCE(excluded.device_type, devices.device_type),
+                device_type = excluded.device_type,
                 status = excluded.status,
                 risk_level = COALESCE(excluded.risk_level, devices.risk_level),
                 last_seen = excluded.last_seen,
                 ping_latency_ms = COALESCE(excluded.ping_latency_ms, devices.ping_latency_ms),
                 os_guess = COALESCE(excluded.os_guess, devices.os_guess),
-                interface = COALESCE(excluded.interface, devices.interface)
-        """, (dev_id, ip_address, mac_address, hostname, vendor, device_type, status, r_level, now, ping_latency_ms, os_guess, interface, now))
+                interface = COALESCE(excluded.interface, devices.interface),
+                classification_source = excluded.classification_source,
+                classification_confidence = excluded.classification_confidence
+        """, (dev_id, ip_address, mac_address, hostname, vendor, device_type, status, r_level, now, ping_latency_ms, os_guess, interface, now, classification_source, classification_confidence))
         await db.commit()
 
 
-async def get_all_devices() -> List[Dict]:
+async def purge_stale_offline_devices(max_offline_seconds: int = 600) -> int:
+    """Permanently delete offline devices that have been disconnected for longer than max_offline_seconds (10 minutes)."""
+    now = datetime.now()
+    deleted_count = 0
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM devices ORDER BY last_seen DESC")
+        cursor = await db.execute("SELECT id, ip_address, status, last_seen FROM devices WHERE status = 'Offline'")
+        rows = await cursor.fetchall()
+        for r in rows:
+            ls = r["last_seen"]
+            should_delete = False
+            if not ls:
+                should_delete = True
+            else:
+                try:
+                    ls_dt = datetime.fromisoformat(ls)
+                    if (now - ls_dt).total_seconds() > max_offline_seconds:
+                        should_delete = True
+                except Exception:
+                    should_delete = True
+            if should_delete:
+                await db.execute("DELETE FROM devices WHERE id = ?", (r["id"],))
+                deleted_count += 1
+        if deleted_count > 0:
+            await db.commit()
+    return deleted_count
+
+
+async def get_all_devices(max_offline_seconds: int = 600) -> List[Dict]:
+    """Retrieve devices, automatically purging any offline devices disconnected for > 10 minutes."""
+    await purge_stale_offline_devices(max_offline_seconds)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM devices ORDER BY status ASC, last_seen DESC")
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+async def get_devices_for_subnet(subnet_cidr: str = None, max_offline_seconds: int = 600) -> List[Dict]:
+    """Return devices on the active local subnet, automatically purging any offline devices disconnected > 10 minutes."""
+    import ipaddress
+    await purge_stale_offline_devices(max_offline_seconds)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM devices ORDER BY status ASC, last_seen DESC")
+        rows = await cursor.fetchall()
+        all_devs = [dict(r) for r in rows]
+
+        if not subnet_cidr or subnet_cidr in ["127.0.0.1/32", "0.0.0.0/0"]:
+            return all_devs
+
+        try:
+            net = ipaddress.ip_network(subnet_cidr, strict=False)
+            return [d for d in all_devs if ipaddress.ip_address(d["ip_address"]) in net]
+        except Exception:
+            return all_devs
 
 
 async def get_device_by_id(device_id: str) -> Optional[Dict]:
@@ -602,4 +706,102 @@ async def insert_mitigation_action(rule_id: Optional[int], rule_name: str, actio
         )
         await db.commit()
         return cursor.lastrowid
+
+
+# ────────────────────────────────────────────
+# Reinforcement Learning Persistence Operations
+# ────────────────────────────────────────────
+
+async def insert_rl_decision(
+    timestamp: str,
+    state_json: str,
+    action_id: int,
+    action_name: str,
+    action_confidence: float,
+    expected_reward: float,
+    target_ip: Optional[str],
+    attacker_ip: Optional[str],
+    victim_ip: Optional[str],
+    attack_type: str,
+    threat_score: float,
+    anomaly_score: float,
+    response_result: str,
+    explainability_json: str,
+    policy_version: str,
+    mode: str
+) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """INSERT INTO rl_decisions 
+               (timestamp, state_json, action_id, action_name, action_confidence, expected_reward,
+                target_ip, attacker_ip, victim_ip, attack_type, threat_score, anomaly_score,
+                response_result, explainability_json, policy_version, mode)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (timestamp, state_json, action_id, action_name, action_confidence, expected_reward,
+             target_ip, attacker_ip, victim_ip, attack_type, threat_score, anomaly_score,
+             response_result, explainability_json, policy_version, mode)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_rl_decisions(limit: int = 50) -> List[Dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM rl_decisions ORDER BY id DESC LIMIT ?", (limit,))
+        rows = await cursor.fetchall()
+        decisions = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["explainability"] = json.loads(d.get("explainability_json") or "[]")
+            except Exception:
+                d["explainability"] = []
+            decisions.append(d)
+        return decisions
+
+
+async def insert_rl_evaluation(
+    timestamp: str,
+    policy_version: str,
+    episodes: int,
+    rl_avg_reward: float,
+    rule_avg_reward: float,
+    rl_mitigation_rate: float,
+    rule_mitigation_rate: float,
+    rl_fp_rate: float,
+    rule_fp_rate: float,
+    reward_improvement: float,
+    disruption_reduction: float,
+    metrics_json: str
+) -> int:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """INSERT INTO rl_evaluations
+               (timestamp, policy_version, episodes, rl_avg_reward, rule_avg_reward,
+                rl_mitigation_rate, rule_mitigation_rate, rl_fp_rate, rule_fp_rate,
+                reward_improvement, disruption_reduction, metrics_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (timestamp, policy_version, episodes, rl_avg_reward, rule_avg_reward,
+             rl_mitigation_rate, rule_mitigation_rate, rl_fp_rate, rule_fp_rate,
+             reward_improvement, disruption_reduction, metrics_json)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def get_latest_rl_evaluation() -> Optional[Dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM rl_evaluations ORDER BY id DESC LIMIT 1")
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        try:
+            res["metrics"] = json.loads(res.get("metrics_json") or "{}")
+        except Exception:
+            res["metrics"] = {}
+        return res
+
 

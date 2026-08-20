@@ -35,14 +35,16 @@ export interface Device {
   mac_address: string | null;
   hostname: string | null;
   vendor: string | null;
-  device_type: string;
-  status: string;
+  device_type: "router" | "access_point" | "switch" | "firewall" | "laptop" | "desktop" | "mobile" | "tablet" | "server" | "printer" | "camera" | "iot" | "plc" | "smart_meter" | "nas" | "unknown" | string;
+  status: "Online" | "Offline" | "Busy" | "Under Attack" | string;
   risk_level: string;
   last_seen: string | null;
   first_seen: string | null;
   ping_latency_ms: number | null;
   os_guess: string | null;
   interface: string | null;
+  classification_source?: string;
+  classification_confidence?: string | number;
 }
 
 export interface SystemMetrics {
@@ -70,8 +72,9 @@ export interface TopologyNode {
   friendly_name?: string | null;
   mac: string | null;
   vendor?: string | null;
-  device_type: string;
-  classification_confidence?: number;
+  device_type: "router" | "access_point" | "switch" | "firewall" | "laptop" | "desktop" | "mobile" | "tablet" | "server" | "printer" | "camera" | "iot" | "plc" | "smart_meter" | "nas" | "unknown" | string;
+  classification_confidence?: string | number;
+  classification_source?: string;
   verification_score?: number;
   evidence_list?: string[];
   is_virtual_adapter?: boolean;
@@ -125,6 +128,21 @@ export interface TopologyData {
   nodes: TopologyNode[];
   edges: TopologyEdge[];
   timestamp: string;
+  gateway_ip?: string | null;
+  gateway_mac?: string | null;
+  gateway_vendor?: string | null;
+  gateway_hostname?: string | null;
+  interface_name?: string | null;
+  interface_ip?: string | null;
+  subnet?: string | null;
+  connection_type?: string;
+  router_client_count?: number;
+  discovered_device_count?: number;
+  online_device_count?: number;
+  offline_device_count?: number;
+  unknown_device_count?: number;
+  under_attack_count?: number;
+  discovery_source?: string;
 }
 
 export interface PredictionResult {
@@ -236,4 +254,85 @@ export interface ResponseConfig {
   is_admin: boolean;
   blocked_ips: string[];
 }
+
+export interface RLExplainabilityFactor {
+  factor: string;
+  value: string;
+  impact: string;
+  detail: string;
+}
+
+export interface RLDecision {
+  id?: number;
+  timestamp: string;
+  status: string;
+  action_id: number;
+  action_name: string;
+  action_description: string;
+  response_engine_action?: string | null;
+  disruption_level: number;
+  confidence: number;
+  action_confidence?: number;
+  expected_reward: number;
+  action_probabilities: number[];
+  target_ip: string | null;
+  attacker_ip?: string | null;
+  victim_ip?: string | null;
+  attack_type?: string;
+  threat_score?: number;
+  anomaly_score?: number;
+  explainability: RLExplainabilityFactor[];
+  dry_run: boolean;
+  auto_response_enabled: boolean;
+  mode: string;
+  policy_version: string;
+  executed: boolean;
+  response_result?: string;
+  state_json?: string;
+}
+
+export interface RLPerformanceSummary {
+  total_episodes: number;
+  average_reward: number;
+  attack_mitigation_rate: number;
+  false_positive_rate: number;
+  unnecessary_blocking_rate: number;
+  service_disruption_rate: number;
+  avg_latency_ms: number;
+  action_distribution: Record<string, number>;
+}
+
+export interface RLEvaluation {
+  id?: number;
+  timestamp: string;
+  policy_version: string;
+  scenarios_evaluated?: number;
+  total_test_episodes?: number;
+  episodes?: number;
+  rl_performance?: RLPerformanceSummary;
+  baseline_performance?: RLPerformanceSummary;
+  rl_avg_reward?: number;
+  rule_avg_reward?: number;
+  rl_mitigation_rate?: number;
+  rule_mitigation_rate?: number;
+  rl_fp_rate?: number;
+  rule_fp_rate?: number;
+  reward_improvement: number;
+  disruption_reduction: number;
+  metrics?: any;
+}
+
+export interface RLStatus {
+  is_running: boolean;
+  policy_trained: boolean;
+  policy_version: string;
+  dry_run: boolean;
+  auto_response_enabled: boolean;
+  allowed_actions: string[];
+  is_training: boolean;
+  is_evaluating: boolean;
+  training_metadata?: any;
+  latest_decision?: RLDecision | null;
+}
+
 

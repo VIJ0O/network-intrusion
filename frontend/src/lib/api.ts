@@ -15,7 +15,10 @@ import type {
   LogEntry,
   ResponseConfig,
   ResponseRule,
-  MitigationAction
+  MitigationAction,
+  RLStatus,
+  RLDecision,
+  RLEvaluation
 } from "@/types";
 
 export function getApiBase(): string {
@@ -87,6 +90,16 @@ export const api = {
   getMitigationActions: (limit = 50) => fetchApi<MitigationAction[]>(`/api/response/actions?limit=${limit}`),
   executeDefenseAction: (action_type: string, target_ip: string, reason = "Manual Analyst Action") =>
     fetchApi<MitigationAction>("/api/response/execute", { method: "POST", body: JSON.stringify({ action_type, target_ip, reason }) }),
+
+  // Reinforcement Learning Adaptive Defense Subsystem
+  getRLStatus: () => fetchApi<RLStatus>("/api/rl/status"),
+  getRLDecisions: (limit = 50) => fetchApi<RLDecision[]>(`/api/rl/decisions?limit=${limit}`),
+  getRLEvaluation: () => fetchApi<RLEvaluation>("/api/rl/evaluation"),
+  triggerRLTrain: (timesteps = 25000) => fetchApi<{ status: string; metadata?: any }>("/api/rl/train", { method: "POST", body: JSON.stringify({ timesteps }) }),
+  triggerRLEvaluate: (episodes = 15) => fetchApi<{ status: string; evaluation?: RLEvaluation }>(`/api/rl/evaluate?episodes=${episodes}`, { method: "POST" }),
+  updateRLConfig: (config: { dry_run?: boolean; auto_response_enabled?: boolean; allowed_actions?: number[] }) =>
+    fetchApi<{ status: string; config: RLStatus }>("/api/rl/config", { method: "POST", body: JSON.stringify(config) }),
+  triggerRLInferNow: () => fetchApi<RLDecision>("/api/rl/infer-now", { method: "POST" }),
 };
 
 export function getWebSocketUrl(channel: string): string {

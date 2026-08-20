@@ -5,17 +5,24 @@ import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { useApiPolling } from "@/hooks/useApiPolling";
 import { api } from "@/lib/api";
-import { Search, X, MonitorSmartphone, Server, Wifi, Smartphone, Router, Cpu, AlertTriangle } from "lucide-react";
+import { Search, X, MonitorSmartphone, Server, Wifi, Smartphone, Router, Cpu, AlertTriangle, Laptop, Printer, Monitor, Tablet, Camera, HardDrive, HelpCircle, Shield, Network } from "lucide-react";
 import type { Device, DashboardStats } from "@/types";
 
-const deviceTypeIcons: Record<string, React.ReactNode> = {
-  "Workstation": <MonitorSmartphone size={16} />,
-  "Server": <Server size={16} />,
-  "Router": <Router size={16} />,
-  "Switch": <Cpu size={16} />,
-  "IoT Device": <Wifi size={16} />,
-  "Mobile": <Smartphone size={16} />,
-  "Unknown": <MonitorSmartphone size={16} />,
+const getDeviceCategoryIcon = (category: string) => {
+  const t = (category || "").toLowerCase();
+  if (t === "laptop" || t.includes("laptop") || t.includes("notebook") || t.includes("macbook")) return <Laptop size={16} color="#60a5fa" />;
+  if (t === "desktop" || t.includes("desktop") || t.includes("workstation")) return <Monitor size={16} color="#38bdf8" />;
+  if (t === "mobile" || t.includes("phone") || t.includes("mobile") || t.includes("android") || t.includes("iphone")) return <Smartphone size={16} color="#34d399" />;
+  if (t === "tablet" || t.includes("tablet") || t.includes("ipad")) return <Tablet size={16} color="#818cf8" />;
+  if (t === "router" || t.includes("router") || t.includes("gateway")) return <Router size={16} color="#2dd4bf" />;
+  if (t === "switch") return <Network size={16} color="#a78bfa" />;
+  if (t === "firewall") return <Shield size={16} color="#f87171" />;
+  if (t === "printer" || t.includes("print")) return <Printer size={16} color="#fbbf24" />;
+  if (t === "server" || t.includes("server") || t.includes("monitoring")) return <Server size={16} color="#818cf8" />;
+  if (t === "nas") return <HardDrive size={16} color="#93c5fd" />;
+  if (t === "camera" || t.includes("cam")) return <Camera size={16} color="#f472b6" />;
+  if (t === "iot" || t.includes("iot") || t.includes("smart") || t === "plc" || t === "smart_meter") return <Cpu size={16} color="#c084fc" />;
+  return <HelpCircle size={16} color="var(--text-muted)" />;
 };
 
 export default function DevicesPage() {
@@ -32,7 +39,8 @@ export default function DevicesPage() {
     const matchesSearch =
       (d.hostname || "").toLowerCase().includes(search.toLowerCase()) ||
       d.ip_address.includes(search) ||
-      (d.mac_address || "").toLowerCase().includes(search.toLowerCase());
+      (d.mac_address || "").toLowerCase().includes(search.toLowerCase()) ||
+      (d.device_type || "").toLowerCase().includes(search.toLowerCase());
     const matchesRisk = riskFilter === "All" || d.risk_level === riskFilter;
     return matchesSearch && matchesRisk;
   });
@@ -64,7 +72,7 @@ export default function DevicesPage() {
             <Search size={16} className="search-icon" />
             <input
               type="text"
-              placeholder="Search by IP, Hostname, MAC..."
+              placeholder="Search by IP, Hostname, MAC, Category..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -89,7 +97,8 @@ export default function DevicesPage() {
                 <th>IP Address</th>
                 <th>MAC Address</th>
                 <th>Vendor</th>
-                <th>Category</th>
+                <th>Device Type</th>
+                <th>Classification Evidence</th>
                 <th>Status</th>
                 <th>Risk Level</th>
                 <th>Link Latency</th>
@@ -98,22 +107,30 @@ export default function DevicesPage() {
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", color: "var(--text-muted)", padding: 40 }}>
+                  <td colSpan={9} style={{ textAlign: "center", color: "var(--text-muted)", padding: 40 }}>
                     <MonitorSmartphone size={32} style={{ opacity: 0.3, marginBottom: 8 }} /><br />
                     No network devices scanned yet
                   </td>
                 </tr>
               ) : (
                 filtered.map((device) => (
-                  <tr key={device.id} onClick={() => setSelectedDevice(device)}>
+                  <tr key={device.id} onClick={() => setSelectedDevice(device)} style={{ cursor: "pointer" }}>
                     <td style={{ fontWeight: 600, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
-                      {deviceTypeIcons[device.device_type] || <MonitorSmartphone size={16} />}
+                      {getDeviceCategoryIcon(device.device_type)}
                       {device.hostname || "Unknown Host"}
                     </td>
                     <td className="ip-address">{device.ip_address}</td>
                     <td className="mac-address">{device.mac_address || "—"}</td>
                     <td>{device.vendor || "—"}</td>
-                    <td>{device.device_type}</td>
+                    <td style={{ textTransform: "capitalize", fontWeight: 500 }}>{device.device_type}</td>
+                    <td>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{device.classification_source || "ARP Scan"}</span>
+                        <span className={`badge ${device.classification_confidence === "High" ? "success" : device.classification_confidence === "Medium" ? "info" : "warning"}`} style={{ fontSize: 9, padding: "1px 4px" }}>
+                          {device.classification_confidence || "Low"}
+                        </span>
+                      </div>
+                    </td>
                     <td>{statusBadge(device.status)}</td>
                     <td>{riskBadge(device.risk_level)}</td>
                     <td style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>
@@ -132,8 +149,8 @@ export default function DevicesPage() {
             <div className="modal" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
                 <span className="modal-title" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  {deviceTypeIcons[selectedDevice.device_type] || <MonitorSmartphone size={16} />}
-                  {selectedDevice.hostname || "Device Detail"}
+                  {getDeviceCategoryIcon(selectedDevice.device_type)}
+                  {selectedDevice.hostname || "Device Detail"} ({selectedDevice.device_type.toUpperCase()})
                 </span>
                 <button className="modal-close" onClick={() => setSelectedDevice(null)}>
                   <X size={16} />
@@ -148,6 +165,16 @@ export default function DevicesPage() {
                 <div className="attack-field">
                   <span className="attack-field-label">MAC Address</span>
                   <span className="mac-address" style={{ fontSize: 13 }}>{selectedDevice.mac_address || "—"}</span>
+                </div>
+                <div className="attack-field">
+                  <span className="attack-field-label">Device Type</span>
+                  <span className="attack-field-value" style={{ textTransform: "capitalize", fontWeight: 700 }}>{selectedDevice.device_type}</span>
+                </div>
+                <div className="attack-field">
+                  <span className="attack-field-label">Classification Source</span>
+                  <span className="attack-field-value" style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>
+                    {selectedDevice.classification_source || "ARP Discovery"} ({selectedDevice.classification_confidence || "Low"} Confidence)
+                  </span>
                 </div>
                 <div className="attack-field">
                   <span className="attack-field-label">Hardware Vendor</span>

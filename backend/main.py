@@ -19,11 +19,12 @@ from services.system_metrics import system_metrics
 from services.ai_engine import ai_engine
 from services.alert_engine import alert_engine
 from services.response_engine import response_engine
+from services.rl_service import rl_service
 
 # API Routers
 from routers import (
     dashboard, devices, alerts, predictions, 
-    attacks, reports, topology, metrics, logs, response
+    attacks, reports, topology, metrics, logs, response, rl
 )
 from websocket.stream import router as ws_router, link_services_to_websocket
 
@@ -62,6 +63,9 @@ async def lifespan(app: FastAPI):
     # Start Active Defense Response Engine
     await response_engine.start(loop)
 
+    # Start RL Adaptive Defense Service
+    await rl_service.start(loop)
+
     yield
 
     # Shutdown lifecycles
@@ -72,12 +76,13 @@ async def lifespan(app: FastAPI):
     await ai_engine.stop()
     await alert_engine.stop()
     await response_engine.stop()
+    await rl_service.stop()
 
 
 app = FastAPI(
     title="NIDS Real Data NDR API",
-    description="Network Detection and Response (NDR) platform API with Scapy packet captures and PyTorch anomaly classification.",
-    version="2.0.0",
+    description="Network Detection and Response (NDR) platform API with Scapy packet captures, PyTorch anomaly classification, and PPO Reinforcement Learning adaptive defense.",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -101,6 +106,7 @@ app.include_router(topology.router)
 app.include_router(metrics.router)
 app.include_router(logs.router)
 app.include_router(response.router)
+app.include_router(rl.router)
 app.include_router(ws_router)
 
 
@@ -108,21 +114,26 @@ app.include_router(ws_router)
 async def root():
     return {
         "name": "NIDS NDR API",
-        "version": "2.0.0",
+        "version": "2.1.0",
         "status": "running",
         "docs": "/docs",
-        "capture_status": "online" if packet_capture.is_online else "offline / pending permissions"
+        "capture_status": "online" if packet_capture.is_online else "offline / pending permissions",
+        "rl_status": "Trained Policy Online" if rl_service.get_status()["policy_trained"] else "Untrained / Monitoring"
     }
 
 
 @app.get("/health")
 async def health():
+    rl_stat = rl_service.get_status()
     return {
         "status": "healthy",
         "services": {
             "packet_capture": "online" if packet_capture.is_online else "offline",
             "device_discovery": "online" if device_discovery.is_running else "offline",
             "ai_engine": ai_engine.model_status,
-            "system_metrics": "online" if system_metrics.is_running else "offline"
+            "system_metrics": "online" if system_metrics.is_running else "offline",
+            "rl_engine": "online" if rl_stat["is_running"] else "offline",
+            "rl_policy_trained": rl_stat["policy_trained"],
+            "rl_mode": "dry_run" if rl_stat["dry_run"] else ("auto_response" if rl_stat["auto_response_enabled"] else "standby")
         }
     }

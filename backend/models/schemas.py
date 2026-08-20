@@ -81,7 +81,7 @@ class Device(BaseModel):
     mac_address: Optional[str] = None
     hostname: Optional[str] = None
     vendor: Optional[str] = None
-    device_type: str = "Unknown"
+    device_type: str = "unknown"
     status: str = "Online"
     risk_level: str = "Low"
     last_seen: Optional[str] = None
@@ -89,6 +89,8 @@ class Device(BaseModel):
     ping_latency_ms: Optional[float] = None
     os_guess: Optional[str] = None
     interface: Optional[str] = None
+    classification_source: Optional[str] = "unknown"
+    classification_confidence: Optional[str] = "Low"
 
 
 # ────────────────────────────────────────────
@@ -126,15 +128,16 @@ class TopologyNode(BaseModel):
     friendly_name: Optional[str] = None
     mac: Optional[str] = "Unknown"
     vendor: Optional[str] = "Unknown"
-    device_type: str = "Unknown Device"
-    classification_confidence: float = 95.0
+    device_type: str = "unknown"
+    classification_confidence: str = "High"  # High, Medium, Low
+    classification_source: str = "unknown"
     verification_score: float = 100.0  # Verification score % based on evidence methods
     evidence_list: List[str] = []  # Evidence items supporting classification & verification
     is_virtual_adapter: bool = False  # Hyper-V, VMware, VirtualBox, WSL, Docker
     connection_type: str = "Ethernet"  # WiFi or Ethernet
     signal_strength_dbm: Optional[int] = None
     os_guess: Optional[str] = "Unknown"
-    status: str = "Online"  # Online, Idle, Active, High Traffic, Under Investigation, Disconnected, Monitoring Server
+    status: str = "Online"  # Online, Idle, Active, High Traffic, Under Investigation, Disconnected, Monitoring Server, Offline
     risk_level: str = "Low"
     threat_score: float = 0.0
     ping_latency_ms: Optional[float] = None
@@ -142,6 +145,8 @@ class TopologyNode(BaseModel):
     is_monitoring_server: bool = False
     is_attacker: bool = False
     is_victim: bool = False
+    is_router_client: bool = True
+    discovery_source: str = "ARP / Network Discovery"
     cpu_usage: Optional[float] = None
     memory_usage: Optional[float] = None
     packets_per_second: float = 0.0
@@ -155,12 +160,16 @@ class TopologyNode(BaseModel):
 
 
 class TopologyEdge(BaseModel):
-    """An edge (active communication session flow) in the topology graph."""
-    source: str  # src IP
-    target: str  # dst IP
-    src_port: int = 49152
-    dst_port: int = 443
-    protocol: str = "TCP"
+    """An edge (active communication session flow or structural relationship) in the topology graph."""
+    source: str  # src IP or node ID
+    target: str  # dst IP or node ID
+    relationship_type: str = "ROUTER_CLIENT"  # ROUTER_CLIENT, OBSERVED_TRAFFIC, WAN_UPLINK, SWITCH_CONNECTION, ACCESS_POINT_CLIENT
+    discovery_source: str = "ARP / Routing Table"
+    source_mac: Optional[str] = None
+    target_mac: Optional[str] = None
+    src_port: int = 0
+    dst_port: int = 0
+    protocol: str = "IP"
     packet_count: int = 0
     bytes_total: int = 0
     packets_per_second: float = 0.0
@@ -168,7 +177,7 @@ class TopologyEdge(BaseModel):
     bandwidth_mbps: float = 0.0
     duration_seconds: float = 0.0
     rtt_latency_ms: float = 0.0
-    tcp_flags: str = "SYN, ACK"
+    tcp_flags: str = ""
     classification: str = "Normal"  # Normal, Suspicious, Malicious, Blocked, Unknown
     protocols: List[str] = []
     is_attack: bool = False
@@ -179,10 +188,27 @@ class TopologyEdge(BaseModel):
 
 
 class TopologyData(BaseModel):
-    """Full topology graph data."""
+    """Full topology graph data with authoritative router client counts and network metadata."""
     nodes: List[TopologyNode] = []
     edges: List[TopologyEdge] = []
     timestamp: str = ""
+    gateway_ip: Optional[str] = None
+    gateway_mac: Optional[str] = None
+    gateway_vendor: Optional[str] = None
+    gateway_hostname: Optional[str] = None
+    interface_name: Optional[str] = None
+    interface_ip: Optional[str] = None
+    subnet: Optional[str] = None
+    connection_type: str = "Ethernet"
+    router_client_count: int = 0
+    discovered_device_count: int = 0
+    online_device_count: int = 0
+    offline_device_count: int = 0
+    unknown_device_count: int = 0
+    under_attack_count: int = 0
+    discovery_source: str = "ARP / OS Routing Table"
+    network_overview: Optional[Dict] = None
+    consistency_check: Optional[Dict] = None
 
 
 # ────────────────────────────────────────────

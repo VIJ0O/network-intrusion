@@ -19,6 +19,7 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Sparkles,
 } from "lucide-react";
 import {
   AreaChart,
@@ -29,24 +30,28 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import type { DashboardStats, PredictionResult, Attack, TrafficStats, Alert } from "@/types";
+import type { DashboardStats, PredictionResult, Attack, TrafficStats, Alert, RLStatus, RLDecision } from "@/types";
+import Link from "next/link";
 
 export default function DashboardPage() {
   // Subscribe to WebSocket live channels
   const { isConnected: isTrafficConnected, liveData: liveTraffic, history: trafficHistory } = useWebSocket<TrafficStats>("traffic");
   const { isConnected: isPredConnected, liveData: livePred } = useWebSocket<PredictionResult>("predictions");
   const { isConnected: isAlertConnected, liveData: liveAlert } = useWebSocket<Alert | { type: string, data: any }>("alerts");
+  const { liveData: liveRLDecision } = useWebSocket<RLDecision>("rl");
 
   // REST polling for statistics and lists
   const dashboardFetcher = useCallback(() => api.getDashboard(), []);
   const predictionsFetcher = useCallback(() => api.getPredictions(), []);
   const attackFetcher = useCallback(() => api.getCurrentAttack(), []);
   const alertsFetcher = useCallback(() => api.getAlerts(5), []);
+  const rlStatusFetcher = useCallback(() => api.getRLStatus(), []);
 
-  const { data: stats, refetch: refetchStats } = useApiPolling<DashboardStats>(dashboardFetcher, 3000);
-  const { data: predictions } = useApiPolling<PredictionResult>(predictionsFetcher, 3000);
-  const { data: currentAttack } = useApiPolling<Attack | { active: false }>(attackFetcher, 3000);
-  const { data: alerts } = useApiPolling<Alert[]>(alertsFetcher, 5000);
+  const { data: stats, refetch: refetchStats } = useApiPolling<DashboardStats>(dashboardFetcher, 5000);
+  const { data: predictions } = useApiPolling<PredictionResult>(predictionsFetcher, 5000);
+  const { data: currentAttack } = useApiPolling<Attack | { active: false }>(attackFetcher, 5000);
+  const { data: alerts } = useApiPolling<Alert[]>(alertsFetcher, 8000);
+  const { data: rlStatus } = useApiPolling<RLStatus>(rlStatusFetcher, 8000);
 
   const systemStatus = stats?.system_status || "Offline";
   const alertCount = stats?.active_alerts || 0;
@@ -379,6 +384,64 @@ export default function DashboardPage() {
                 })}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* RL Adaptive Defense Live Overview Card */}
+        <div className="card" style={{ marginTop: 24, border: "1px solid rgba(91, 110, 232, 0.3)", background: "linear-gradient(135deg, rgba(13, 21, 39, 0.9), rgba(17, 29, 53, 0.95))" }}>
+          <div className="card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Sparkles size={16} color="var(--accent-cyan)" />
+              <span className="card-title" style={{ color: "var(--accent-cyan)" }}>RL Adaptive Response Engine</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{
+                fontSize: 11,
+                fontWeight: 600,
+                padding: "2px 8px",
+                borderRadius: 4,
+                background: rlStatus?.dry_run ? "rgba(16, 185, 129, 0.15)" : "rgba(0, 212, 255, 0.15)",
+                color: rlStatus?.dry_run ? "#10B981" : "var(--accent-cyan)",
+                border: "1px solid rgba(0, 212, 255, 0.2)"
+              }}>
+                {rlStatus?.dry_run ? "DRY-RUN (Safe)" : "CONTROLLED ACTIVE"}
+              </span>
+              <Link href="/rl" style={{ fontSize: 12, color: "var(--accent-cyan)", textDecoration: "none", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                Open RL Console →
+              </Link>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr", gap: 16, marginTop: 12 }}>
+            <div style={{ background: "var(--bg-secondary)", padding: "12px 16px", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Recommended Defense Action</span>
+              <p style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-cyan)", marginTop: 2 }}>
+                {liveRLDecision?.action_name || rlStatus?.latest_decision?.action_name || "CONTINUE_MONITORING"}
+              </p>
+              <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                {liveRLDecision?.action_description || rlStatus?.latest_decision?.action_description || "Safe passive monitoring baseline active."}
+              </span>
+            </div>
+
+            <div style={{ background: "var(--bg-secondary)", padding: "12px 16px", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Target Host & Context</span>
+              <p style={{ fontSize: 14, fontWeight: 600, fontFamily: "var(--font-mono)", marginTop: 2 }}>
+                {liveRLDecision?.target_ip || rlStatus?.latest_decision?.target_ip || "127.0.0.1"}
+              </p>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Confidence: {liveRLDecision?.confidence || rlStatus?.latest_decision?.confidence || 100}% • V(s): {liveRLDecision?.expected_reward ?? rlStatus?.latest_decision?.expected_reward ?? 0.0}
+              </span>
+            </div>
+
+            <div style={{ background: "var(--bg-secondary)", padding: "12px 16px", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <span style={{ fontSize: 11, color: "var(--text-muted)", textTransform: "uppercase" }}>Policy Status</span>
+              <p style={{ fontSize: 14, fontWeight: 600, color: rlStatus?.policy_trained ? "#10B981" : "#F59E0B", marginTop: 2 }}>
+                {rlStatus?.policy_trained ? "Trained PPO Policy Online" : "Untrained / Baseline"}
+              </p>
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                Version: v{rlStatus?.policy_version || "1.0.0"} • Sub-millisecond inference
+              </span>
+            </div>
           </div>
         </div>
 

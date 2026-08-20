@@ -98,7 +98,7 @@ body {
   min-height: 100vh;
 }
 
-/* Background gradient overlay */
+/* Background gradient overlay — static, no repaint */
 body::before {
   content: '';
   position: fixed;
@@ -111,6 +111,7 @@ body::before {
     radial-gradient(ellipse at 80% 100%, rgba(91, 110, 232, 0.03) 0%, transparent 50%);
   pointer-events: none;
   z-index: 0;
+  will-change: auto;
 }
 
 /* Scrollbar */
@@ -130,14 +131,16 @@ body::before {
 }
 
 /* ===== Layout ===== */
-.app-layout {
+.app-layout,
+.layout {
   display: flex;
   min-height: 100vh;
   position: relative;
   z-index: 1;
 }
 
-.main-content {
+.main-content,
+.dashboard-content {
   flex: 1;
   margin-left: var(--sidebar-width);
   padding: 24px 32px;
@@ -313,15 +316,15 @@ body::before {
   left: var(--sidebar-width);
   right: 0;
   height: var(--header-height);
-  background: rgba(13, 21, 39, 0.8);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  /* Solid bg — avoids backdrop-filter repaint every scroll frame */
+  background: #0D1527;
   border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 32px;
   z-index: 90;
+  will-change: transform;
 }
 
 .header-title {
@@ -395,7 +398,8 @@ body::before {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 20px;
-  transition: all var(--transition-normal);
+  /* Only transition border/shadow — not layout properties */
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .card:hover {
@@ -440,7 +444,8 @@ body::before {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 20px;
-  transition: all var(--transition-normal);
+  /* Removed transform/all transitions — they cause layout reflow */
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   position: relative;
   overflow: hidden;
 }
@@ -454,12 +459,11 @@ body::before {
   height: 2px;
   background: linear-gradient(90deg, var(--accent-cyan), var(--accent-violet));
   opacity: 0;
-  transition: opacity var(--transition-normal);
+  transition: opacity var(--transition-fast);
 }
 
 .stat-card:hover {
   border-color: var(--border-accent);
-  transform: translateY(-2px);
   box-shadow: var(--shadow-glow-cyan);
 }
 
@@ -602,11 +606,12 @@ body::before {
 .progress-fill.info { background: linear-gradient(90deg, #2563EB, var(--color-info)); }
 .progress-fill.accent { background: linear-gradient(90deg, var(--accent-violet), var(--accent-cyan)); }
 
-/* ===== Tables ===== */
 .table-container {
   overflow-x: auto;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
+  /* Reduce layout scope for large tables */
+  contain: layout;
 }
 
 table {
@@ -637,12 +642,27 @@ td {
 }
 
 tr {
-  transition: background var(--transition-fast);
+  /* Only transition background — not all properties */
+  transition: background-color var(--transition-fast);
 }
 
 tbody tr:hover {
   background: var(--bg-hover);
   cursor: pointer;
+}
+
+/* Aliases used by RL page and other pages */
+.table-responsive {
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  contain: layout;
+  overscroll-behavior-x: contain;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
 .ip-address {
@@ -663,7 +683,8 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 16px 20px;
-  transition: all var(--transition-normal);
+  /* Removed 'all' transition and translateY — causes reflow */
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   position: relative;
   overflow: hidden;
 }
@@ -684,7 +705,6 @@ tbody tr:hover {
 
 .alert-card:hover {
   border-color: var(--border-light);
-  transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
 
@@ -753,7 +773,8 @@ tbody tr:hover {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  /* Only composite-safe transitions — no layout properties */
+  transition: background-color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), opacity var(--transition-fast);
   background: var(--bg-elevated);
   color: var(--text-primary);
 }
@@ -761,7 +782,6 @@ tbody tr:hover {
 .btn:hover {
   background: var(--bg-hover);
   border-color: var(--border-light);
-  transform: translateY(-1px);
 }
 
 .btn-primary {
@@ -783,6 +803,18 @@ tbody tr:hover {
 .btn-sm {
   padding: 6px 14px;
   font-size: 13px;
+}
+
+.btn-secondary {
+  background: var(--bg-elevated);
+  border-color: var(--border-light);
+  color: var(--text-secondary);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-accent);
+  color: var(--text-primary);
 }
 
 /* ===== Input / Search ===== */
@@ -1122,6 +1154,8 @@ tbody tr:hover {
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-sm);
+  /* GPU-composited animation — hint browser to keep in own layer */
+  will-change: background-position;
 }
 
 @keyframes shimmer {

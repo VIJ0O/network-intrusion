@@ -28,7 +28,8 @@ class WebSocketManager:
             "alerts": set(),
             "logs": set(),
             "predictions": set(),
-            "response": set()
+            "response": set(),
+            "rl": set()
         }
 
     async def connect(self, websocket: WebSocket, channel: str):
@@ -108,6 +109,7 @@ async def on_device_discovery_update(devices: list):
 def link_services_to_websocket():
     from services.response_engine import response_engine
     from services.device_discovery import device_discovery
+    from services.rl_service import rl_service
     packet_capture.subscribe(lambda stats: asyncio.create_task(on_traffic_stats(stats)))
     system_metrics.subscribe(lambda metrics: asyncio.create_task(on_system_metrics(metrics)))
     ai_engine.subscribe(lambda pred: asyncio.create_task(on_ai_prediction(pred)))
@@ -115,6 +117,7 @@ def link_services_to_websocket():
     log_manager.subscribe(lambda entry: asyncio.create_task(on_log_message(entry)))
     response_engine.subscribe(lambda action: asyncio.create_task(ws_manager.broadcast("response", action)))
     device_discovery.subscribe(lambda devs: asyncio.create_task(on_device_discovery_update(devs)))
+    rl_service.subscribe(lambda decision: asyncio.create_task(ws_manager.broadcast("rl", decision)))
 
 
 # ────────────────────────────────────────────
@@ -197,4 +200,16 @@ async def websocket_response(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "response")
+
+
+@router.websocket("/ws/rl")
+async def websocket_rl(websocket: WebSocket):
+    """Streams live reinforcement learning adaptive defense decisions and explainability."""
+    await ws_manager.connect(websocket, "rl")
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, "rl")
+
 

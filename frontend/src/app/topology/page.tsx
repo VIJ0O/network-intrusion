@@ -28,12 +28,14 @@ import {
   Cpu as PlcIcon,
   Router as RouterIcon,
   Sliders,
-  Box
+  Box,
+  Sparkles
 } from "lucide-react";
-import type { TopologyData, TopologyNode, TopologyEdge, DashboardStats } from "@/types";
+import type { TopologyData, TopologyNode, TopologyEdge, DashboardStats, RLStatus, RLDecision } from "@/types";
 
 export default function TopologyPage() {
   const { isConnected, liveData } = useWebSocket<TopologyData>("topology");
+  const { liveData: liveRLDecision } = useWebSocket<RLDecision>("rl");
   const [selectedNode, setSelectedNode] = useState<TopologyNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<TopologyEdge | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<TopologyEdge | null>(null);
@@ -45,7 +47,9 @@ export default function TopologyPage() {
   const [isReplayMode, setIsReplayMode] = useState(false);
 
   const dashFetcher = useCallback(() => api.getDashboard(), []);
+  const rlStatusFetcher = useCallback(() => api.getRLStatus(), []);
   const { data: stats } = useApiPolling<DashboardStats>(dashFetcher, 5000);
+  const { data: rlStatus } = useApiPolling<RLStatus>(rlStatusFetcher, 3000);
 
   const fetchTopology = useCallback(async () => {
     try {
@@ -74,49 +78,28 @@ export default function TopologyPage() {
       n.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
       n.ip.includes(searchQuery) ||
       (n.vendor || "").toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = activeFilter === "All" || n.device_type === activeFilter ||
-      (activeFilter === "Mobile Phone" && (n.device_type === "iPhone" || n.device_type === "Android Phone" || n.device_type === "Mobile" || n.device_type === "Mobile Phone"));
+    const matchesType = activeFilter === "All" || n.device_type.toLowerCase() === activeFilter.toLowerCase();
     return matchesSearch && matchesType;
   });
 
   const getDeviceIconSymbol = (type: string) => {
-    switch (type) {
-      case "Router":
-        return "🌐";
-      case "Monitoring Server":
-        return "🛡️";
-      case "Server":
-        return "🗄️";
-      case "Desktop":
-      case "Workstation":
-        return "🖥️";
-      case "Laptop":
-        return "💻";
-      case "Phone":
-      case "Mobile":
-      case "Mobile Phone":
-      case "Android Phone":
-      case "iPhone":
-        return "📱";
-      case "Tablet":
-        return "📲";
-      case "PLC":
-        return "⚙️";
-      case "Smart Meter":
-        return "⚡";
-      case "Camera":
-        return "📹";
-      case "Printer":
-        return "🖨️";
-      case "IoT Device":
-        return "🔌";
-      case "Switch":
-        return "🔀";
-      case "Firewall":
-        return "🧱";
-      default:
-        return "❓";
-    }
+    const t = (type || "").toLowerCase();
+    if (t.includes("router") || t.includes("gateway")) return "🌐";
+    if (t.includes("access_point") || t.includes("ap")) return "📡";
+    if (t.includes("switch")) return "🔀";
+    if (t.includes("firewall")) return "🧱";
+    if (t.includes("monitoring")) return "🛡️";
+    if (t.includes("laptop") || t.includes("notebook") || t.includes("macbook") || t.includes("thinkpad") || t.includes("ideapad")) return "💻";
+    if (t.includes("phone") || t.includes("mobile") || t.includes("android") || t.includes("iphone") || t.includes("galaxy") || t.includes("pixel")) return "📱";
+    if (t.includes("tablet") || t.includes("ipad")) return "📲";
+    if (t.includes("desktop") || t.includes("workstation") || t.includes("optiplex") || t.includes("pc")) return "🖥️";
+    if (t.includes("printer") || t.includes("print")) return "🖨️";
+    if (t.includes("camera") || t.includes("cctv")) return "📹";
+    if (t.includes("server")) return "🗄️";
+    if (t.includes("nas")) return "💾";
+    if (t.includes("iot") || t.includes("smart") || t.includes("plc") || t.includes("sensor")) return "📟";
+    if (t.includes("internet") || t.includes("wan")) return "☁️";
+    return "❓";
   };
 
   const getStatusColor = (status: string, risk: string) => {
@@ -174,6 +157,52 @@ export default function TopologyPage() {
           gap: 16
         }}
       >
+        {/* Network Discovery Diagnostics Panel */}
+        <div className="card-glass" style={{ padding: "10px 18px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 12, background: "rgba(15, 23, 42, 0.75)", border: "1px solid var(--border)", borderRadius: 10, fontSize: 11 }}>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Active Interface</div>
+            <div style={{ color: "var(--accent-cyan)", fontWeight: 700, marginTop: 2 }}>{currentTopology?.interface_name || "Wi-Fi"}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Host Local IP</div>
+            <div style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)", fontWeight: 600, marginTop: 2 }}>{currentTopology?.interface_ip || "192.168.0.117"}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Subnet CIDR</div>
+            <div style={{ fontFamily: "var(--font-mono)", color: "var(--text-primary)", fontWeight: 600, marginTop: 2 }}>{currentTopology?.subnet || "192.168.0.0/24"}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Default Gateway</div>
+            <div style={{ fontFamily: "var(--font-mono)", color: "var(--accent-blue)", fontWeight: 600, marginTop: 2 }}>{currentTopology?.gateway_ip || "192.168.0.1"}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Real Devices Discovered</div>
+            <div style={{ color: "var(--color-safe)", fontWeight: 700, marginTop: 2, fontSize: 13 }}>{currentTopology?.discovered_device_count ?? nodes.length}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Online / Offline</div>
+            <div style={{ color: "var(--text-primary)", fontWeight: 600, marginTop: 2 }}>
+              <span style={{ color: "var(--color-safe)" }}>● {currentTopology?.online_device_count ?? nodes.filter(n => n.status === "Online").length}</span>
+              {" / "}
+              <span style={{ color: "var(--text-muted)" }}>○ {currentTopology?.offline_device_count ?? 0}</span>
+            </div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Router Clients</div>
+            <div style={{ color: "var(--text-primary)", fontWeight: 600, marginTop: 2 }}>{currentTopology?.router_client_count ?? nodes.filter(n => !n.is_router && n.id !== "internet").length}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>Discovery Pipeline</div>
+            <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>{currentTopology?.discovery_source || "Active Subnet Probe"}</div>
+          </div>
+          <div>
+            <div style={{ color: "var(--text-muted)", fontSize: 10, textTransform: "uppercase", fontWeight: 700 }}>WebSocket / Telemetry</div>
+            <div style={{ color: isConnected ? "var(--color-safe)" : "var(--color-critical)", fontWeight: 700, marginTop: 2 }}>
+              {isConnected ? "● CONNECTED" : "○ OFFLINE"}
+            </div>
+          </div>
+        </div>
+
         {/* Topology Filter & Search Bar */}
         <div className="card-glass" style={{ padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -241,14 +270,24 @@ export default function TopologyPage() {
                 width: 180
               }}
             />
-            {["All", "Router", "Monitoring Server", "Workstation", "Mobile Phone", "Server", "Printer", "IoT Device"].map((t) => (
+            {[
+              { id: "All", label: "All Devices" },
+              { id: "router", label: "Router" },
+              { id: "laptop", label: "Laptop" },
+              { id: "desktop", label: "Desktop" },
+              { id: "mobile", label: "Mobile" },
+              { id: "server", label: "Server" },
+              { id: "printer", label: "Printer" },
+              { id: "iot", label: "IoT" },
+              { id: "unknown", label: "Unknown" }
+            ].map((t) => (
               <button
-                key={t}
-                className={`filter-btn ${activeFilter === t ? "active" : ""}`}
-                onClick={() => setActiveFilter(t)}
+                key={t.id}
+                className={`filter-btn ${activeFilter === t.id ? "active" : ""}`}
+                onClick={() => setActiveFilter(t.id)}
                 style={{ fontSize: 11, padding: "5px 10px" }}
               >
-                {t}
+                {t.label}
               </button>
             ))}
           </div>
@@ -536,13 +575,42 @@ export default function TopologyPage() {
                   >
                     {getDeviceIconSymbol(selectedNode.device_type)}
                   </div>
-                  <div>
+                    <div>
                     <div style={{ fontSize: 16, fontWeight: 700 }}>{selectedNode.label}</div>
                     <div className="ip-address" style={{ fontSize: 13, color: "var(--accent-cyan)" }}>
                       {selectedNode.ip}
                     </div>
                   </div>
                 </div>
+
+                {/* RL Adaptive Defense Status for Selected Node */}
+                {(() => {
+                  const dec = liveRLDecision || rlStatus?.latest_decision;
+                  const isTarget = dec && (dec.target_ip === selectedNode.ip || dec.attacker_ip === selectedNode.ip);
+                  if (!isTarget) return null;
+
+                  return (
+                    <div style={{
+                      background: "rgba(91, 110, 232, 0.15)",
+                      border: "1px solid var(--accent-cyan)",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between"
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <Sparkles size={14} color="var(--accent-cyan)" />
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--accent-cyan)" }}>
+                          RL DECISION: {dec.action_name}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>
+                        {dec.confidence}% Conf ({dec.mode || "DRY RUN"})
+                      </span>
+                    </div>
+                  );
+                })()}
 
                 {/* Core Specifications */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, background: "var(--bg-main)", padding: 10, borderRadius: 8 }}>
@@ -557,18 +625,24 @@ export default function TopologyPage() {
                     <div style={{ fontSize: 11, marginTop: 2, fontWeight: 600 }}>{selectedNode.vendor || "Unknown"}</div>
                   </div>
                   <div>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Device Category</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Device Type</span>
                     <div style={{ fontSize: 11, marginTop: 2, fontWeight: 600, display: "flex", gap: 6, alignItems: "center" }}>
-                      <span>{(selectedNode.classification_confidence ?? 95) < 80 ? "UNKNOWN DEVICE" : selectedNode.device_type}</span>
-                      <span className="badge info" style={{ fontSize: 9, padding: "1px 4px" }}>
-                        Confidence {(selectedNode.classification_confidence ?? 95).toFixed(0)}%
+                      <span style={{ textTransform: "capitalize" }}>{selectedNode.device_type}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Classification Evidence</span>
+                    <div style={{ fontSize: 11, marginTop: 2, fontWeight: 600, display: "flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "var(--accent-cyan)" }}>{selectedNode.classification_source || "Network Discovery"}</span>
+                      <span className={`badge ${selectedNode.classification_confidence === "High" ? "success" : selectedNode.classification_confidence === "Medium" ? "info" : "warning"}`} style={{ fontSize: 9, padding: "1px 4px" }}>
+                        {selectedNode.classification_confidence || "Low"}
                       </span>
                     </div>
                   </div>
                   <div>
-                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Verification Score</span>
-                    <div style={{ fontSize: 11, marginTop: 2, fontWeight: 700, color: "var(--color-safe)", display: "flex", gap: 4, alignItems: "center" }}>
-                      <span>🛡️ {(selectedNode.verification_score ?? 100).toFixed(0)}% Verified</span>
+                    <span style={{ fontSize: 10, color: "var(--text-muted)", textTransform: "uppercase" }}>Operating System</span>
+                    <div style={{ fontSize: 11, marginTop: 2, color: "var(--text-secondary)", fontWeight: 600 }}>
+                      {selectedNode.os_guess || "Unknown OS"}
                     </div>
                   </div>
                   <div>
@@ -583,6 +657,7 @@ export default function TopologyPage() {
                 <div style={{ display: "flex", justifyContent: "space-between", background: "rgba(15, 23, 42, 0.6)", padding: "8px 12px", borderRadius: 6, border: "1px solid var(--border)", fontSize: 11 }}>
                   <span>⬇️ Download: <strong>{selectedNode.download_mbps || 0.12} Mbps</strong></span>
                   <span>⬆️ Upload: <strong>{selectedNode.upload_mbps || 0.05} Mbps</strong></span>
+                  <span>⏱️ Latency: <strong>{selectedNode.ping_latency_ms ? `${selectedNode.ping_latency_ms.toFixed(1)} ms` : "Passive"}</strong></span>
                 </div>
 
                 {/* Evidence Breakdown */}

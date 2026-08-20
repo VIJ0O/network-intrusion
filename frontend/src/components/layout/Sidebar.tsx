@@ -16,6 +16,7 @@ import {
   Settings,
   Shield,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react";
 
 interface NavItem {
@@ -42,6 +43,7 @@ export default function Sidebar({ alertCount = 0, isConnected = false }: Sidebar
   ];
 
   const analysisNav: NavItem[] = [
+    { href: "/rl", label: "RL Defense", icon: <Sparkles size={20} /> },
     { href: "/alerts", label: "Alerts", icon: <Bell size={20} />, badge: alertCount },
     { href: "/response", label: "Active Defense", icon: <ShieldAlert size={20} /> },
     { href: "/history", label: "Attack History", icon: <History size={20} /> },

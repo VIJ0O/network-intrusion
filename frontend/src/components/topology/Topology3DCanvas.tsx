@@ -50,46 +50,23 @@ export default function Topology3DCanvas({
   const packetSpheresRef = useRef<{ mesh: THREE.Mesh; src: THREE.Vector3; dst: THREE.Vector3; progress: number; speed: number }[]>([]);
 
   const getDeviceIconSymbol = (type: string) => {
-    switch (type) {
-      case "Router":
-      case "Gateway Router":
-        return "🌐";
-      case "Monitoring Server":
-        return "🛡️";
-      case "Server":
-        return "🗄️";
-      case "Desktop":
-      case "Workstation":
-        return "🖥️";
-      case "Laptop":
-        return "💻";
-      case "Phone":
-      case "Mobile":
-      case "Mobile Phone":
-      case "Android Phone":
-      case "iPhone":
-        return "📱";
-      case "Tablet":
-        return "📲";
-      case "PLC":
-        return "⚙️";
-      case "Smart Meter":
-        return "⚡";
-      case "Camera":
-        return "📹";
-      case "Printer":
-        return "🖨️";
-      case "IoT Device":
-        return "🔌";
-      case "Switch":
-        return "🔀";
-      case "Firewall":
-        return "🧱";
-      case "Internet":
-        return "☁️";
-      default:
-        return "❓";
-    }
+    const t = (type || "").toLowerCase();
+    if (t.includes("router") || t.includes("gateway")) return "🌐";
+    if (t.includes("access_point") || t.includes("ap")) return "📡";
+    if (t.includes("switch")) return "🔀";
+    if (t.includes("firewall")) return "🧱";
+    if (t.includes("monitoring")) return "🛡️";
+    if (t.includes("laptop") || t.includes("notebook") || t.includes("macbook") || t.includes("thinkpad") || t.includes("ideapad")) return "💻";
+    if (t.includes("phone") || t.includes("mobile") || t.includes("android") || t.includes("iphone") || t.includes("galaxy") || t.includes("pixel")) return "📱";
+    if (t.includes("tablet") || t.includes("ipad")) return "📲";
+    if (t.includes("desktop") || t.includes("workstation") || t.includes("optiplex") || t.includes("pc")) return "🖥️";
+    if (t.includes("printer") || t.includes("print")) return "🖨️";
+    if (t.includes("camera") || t.includes("cctv")) return "📹";
+    if (t.includes("server")) return "🗄️";
+    if (t.includes("nas")) return "💾";
+    if (t.includes("iot") || t.includes("smart") || t.includes("plc") || t.includes("sensor")) return "📟";
+    if (t.includes("internet") || t.includes("wan")) return "☁️";
+    return "❓";
   };
 
   const getStatusColor = (status: string, risk: string) => {
@@ -114,93 +91,278 @@ export default function Topology3DCanvas({
     let baseColor = 0x10b981; // Green Online
 
     if (node.is_monitoring_server) baseColor = 0x3b82f6; // Blue
-    else if (node.is_router) baseColor = 0x00d4ff; // Cyan
-    else if (node.id === "internet" || node.device_type === "Internet") baseColor = 0x8b5cf6; // Purple
+    else if (node.is_router || node.device_type === "router") baseColor = 0x00d4ff; // Cyan
+    else if (node.id === "internet" || node.device_type === "internet") baseColor = 0x8b5cf6; // Purple
     else if (isAttacked) baseColor = 0xef4444; // Red
     else if (node.status === "Busy") baseColor = 0xf59e0b; // Yellow
+    else if (node.status === "Offline" || node.status === "Disconnected") baseColor = 0x64748b; // Slate
 
     const mainMaterial = new THREE.MeshStandardMaterial({
       color: baseColor,
-      roughness: 0.2,
-      metalness: 0.7,
+      roughness: 0.25,
+      metalness: 0.65,
       emissive: baseColor,
-      emissiveIntensity: isAttacked ? 0.6 : 0.3
+      emissiveIntensity: isAttacked ? 0.6 : 0.25
     });
 
-    if (node.id === "internet" || node.device_type === "Internet") {
+    const darkMaterial = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.4,
+      metalness: 0.8
+    });
+
+    const glowAccentMat = new THREE.MeshBasicMaterial({
+      color: baseColor
+    });
+
+    const dType = (node.device_type || "unknown").toLowerCase();
+
+    // ── 1. INTERNET / WAN UPLINK ──
+    if (node.id === "internet" || dType === "internet") {
       const sphereGeo = new THREE.IcosahedronGeometry(1.6, 2);
       const cloudMesh = new THREE.Mesh(sphereGeo, mainMaterial);
       cloudMesh.name = "main";
       group.add(cloudMesh);
 
       const wireMat = new THREE.MeshBasicMaterial({ color: 0xc084fc, wireframe: true });
-      const wireMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.8, 1), wireMat);
+      const wireMesh = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9, 1), wireMat);
       wireMesh.name = "spinner";
       group.add(wireMesh);
-    } else if (node.is_router) {
-      const bodyGeo = new THREE.BoxGeometry(2.4, 0.6, 1.8);
+    }
+    // ── 2. ROUTER / GATEWAY ROUTER ──
+    else if (node.is_router || dType === "router") {
+      const bodyGeo = new THREE.BoxGeometry(2.2, 0.45, 1.5);
       const bodyMesh = new THREE.Mesh(bodyGeo, mainMaterial);
       bodyMesh.name = "main";
       group.add(bodyMesh);
 
-      const antGeo = new THREE.CylinderGeometry(0.06, 0.06, 1.5, 8);
-      const antMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9 });
+      // Dual Antennas
+      const antGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.4, 8);
+      const antMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.9 });
       const ant1 = new THREE.Mesh(antGeo, antMat);
-      ant1.position.set(-0.8, 0.8, -0.6);
+      ant1.position.set(-0.75, 0.7, -0.55);
+      ant1.rotation.z = -0.15;
       group.add(ant1);
 
       const ant2 = new THREE.Mesh(antGeo, antMat);
-      ant2.position.set(0.8, 0.8, -0.6);
+      ant2.position.set(0.75, 0.7, -0.55);
+      ant2.rotation.z = 0.15;
       group.add(ant2);
 
-      const ringGeo = new THREE.TorusGeometry(2.2, 0.06, 16, 32);
-      const ringMat = new THREE.MeshBasicMaterial({ color: 0x00d4ff, wireframe: true });
+      // Front LED Status Bar
+      const ledBar = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.04), glowAccentMat);
+      ledBar.position.set(0, 0, 0.76);
+      group.add(ledBar);
+
+      const ringGeo = new THREE.TorusGeometry(2.0, 0.04, 16, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: baseColor, wireframe: true });
       const ringMesh = new THREE.Mesh(ringGeo, ringMat);
       ringMesh.name = "spinner";
       ringMesh.rotation.x = Math.PI / 2;
       group.add(ringMesh);
-    } else if (node.is_monitoring_server || node.device_type === "Server") {
-      const rackGeo = new THREE.BoxGeometry(1.5, 2.2, 1.5);
-      const rackMesh = new THREE.Mesh(rackGeo, mainMaterial);
-      rackMesh.name = "main";
-      group.add(rackMesh);
+    }
+    // ── 3. ACCESS POINT ──
+    else if (dType === "access_point") {
+      const saucerGeo = new THREE.CylinderGeometry(1.2, 0.8, 0.3, 24);
+      const saucerMesh = new THREE.Mesh(saucerGeo, mainMaterial);
+      saucerMesh.name = "main";
+      group.add(saucerMesh);
 
-      const ledGeo = new THREE.BoxGeometry(1.3, 0.1, 0.05);
-      const ledMat = new THREE.MeshBasicMaterial({ color: 0x60a5fa });
-      for (let i = 0; i < 4; i++) {
-        const led = new THREE.Mesh(ledGeo, ledMat);
-        led.position.set(0, -0.6 + i * 0.4, 0.78);
-        group.add(led);
+      const ringLED = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.05, 16, 32), glowAccentMat);
+      ringLED.rotation.x = Math.PI / 2;
+      ringLED.position.y = 0.16;
+      group.add(ringLED);
+    }
+    // ── 4. SWITCH ──
+    else if (dType === "switch") {
+      const swGeo = new THREE.BoxGeometry(2.5, 0.35, 1.2);
+      const swMesh = new THREE.Mesh(swGeo, mainMaterial);
+      swMesh.name = "main";
+      group.add(swMesh);
+
+      // RJ45 Port Array
+      for (let i = 0; i < 8; i++) {
+        const port = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.04), glowAccentMat);
+        port.position.set(-0.9 + i * 0.25, 0, 0.61);
+        group.add(port);
       }
-    } else if (node.device_type === "Laptop" || node.device_type === "Workstation") {
-      const baseGeo = new THREE.BoxGeometry(1.6, 0.15, 1.2);
+    }
+    // ── 5. FIREWALL ──
+    else if (dType === "firewall") {
+      const fwGeo = new THREE.BoxGeometry(2.2, 0.6, 1.4);
+      const fwMesh = new THREE.Mesh(fwGeo, mainMaterial);
+      fwMesh.name = "main";
+      group.add(fwMesh);
+
+      const shieldBadge = new THREE.Mesh(new THREE.OctahedronGeometry(0.4, 0), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+      shieldBadge.position.set(0, 0.4, 0.3);
+      group.add(shieldBadge);
+    }
+    // ── 6. LAPTOP ──
+    else if (dType === "laptop") {
+      // Keyboard Base Slab
+      const baseGeo = new THREE.BoxGeometry(1.6, 0.1, 1.1);
       const baseMesh = new THREE.Mesh(baseGeo, mainMaterial);
       baseMesh.name = "main";
       group.add(baseMesh);
 
-      const screenGeo = new THREE.BoxGeometry(1.6, 1.1, 0.1);
+      // Open Display Screen
+      const screenGeo = new THREE.BoxGeometry(1.55, 1.0, 0.06);
       const screenMesh = new THREE.Mesh(screenGeo, mainMaterial);
-      screenMesh.position.set(0, 0.6, -0.55);
-      screenMesh.rotation.x = -0.2;
+      screenMesh.position.set(0, 0.52, -0.5);
+      screenMesh.rotation.x = -0.22;
       group.add(screenMesh);
-    } else if (
-      node.device_type === "Phone" ||
-      node.device_type === "Mobile" ||
-      node.device_type === "Mobile Phone" ||
-      node.device_type === "Android Phone" ||
-      node.device_type === "iPhone" ||
-      node.device_type === "Tablet"
-    ) {
-      const phoneGeo = new THREE.BoxGeometry(0.8, 1.5, 0.1);
+
+      // Glowing Display Matrix Face
+      const displayFace = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.85), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
+      displayFace.position.set(0, 0.52, -0.46);
+      displayFace.rotation.x = -0.22;
+      group.add(displayFace);
+    }
+    // ── 7. DESKTOP / WORKSTATION ──
+    else if (dType === "desktop") {
+      // Standalone Monitor Display
+      const monScreen = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.95, 0.08), mainMaterial);
+      monScreen.position.set(-0.35, 0.65, 0);
+      monScreen.name = "main";
+      group.add(monScreen);
+
+      // Monitor Stand Post & Base
+      const standPost = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4, 8), darkMaterial);
+      standPost.position.set(-0.35, 0.18, 0);
+      group.add(standPost);
+
+      const standBase = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.5), darkMaterial);
+      standBase.position.set(-0.35, 0.02, 0);
+      group.add(standBase);
+
+      // Mid-Tower CPU Case placed beside monitor
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.3, 1.1), darkMaterial);
+      tower.position.set(0.75, 0.65, 0);
+      group.add(tower);
+
+      const towerLED = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.04), glowAccentMat);
+      towerLED.position.set(0.75, 0.65, 0.56);
+      group.add(towerLED);
+    }
+    // ── 8. MOBILE / SMARTPHONE ──
+    else if (dType === "mobile") {
+      // Slim Ergonomic Smartphone
+      const phoneGeo = new THREE.BoxGeometry(0.72, 1.45, 0.07);
       const phoneMesh = new THREE.Mesh(phoneGeo, mainMaterial);
       phoneMesh.name = "main";
-      phoneMesh.rotation.x = -0.3;
+      phoneMesh.rotation.x = -0.25;
       group.add(phoneMesh);
-    } else {
-      const boxGeo = new THREE.BoxGeometry(1.3, 1.3, 1.3);
-      const boxMesh = new THREE.Mesh(boxGeo, mainMaterial);
-      boxMesh.name = "main";
-      group.add(boxMesh);
+
+      // Glossy OLED Screen
+      const screenMat = new THREE.MeshBasicMaterial({ color: 0x020617 });
+      const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 1.32), screenMat);
+      screenMesh.position.set(0, 0, 0.04);
+      screenMesh.rotation.x = -0.25;
+      group.add(screenMesh);
+
+      // Camera Bump
+      const camBump = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.32, 0.04), darkMaterial);
+      camBump.position.set(0.18, 0.48, -0.05);
+      camBump.rotation.x = -0.25;
+      group.add(camBump);
+    }
+    // ── 9. TABLET ──
+    else if (dType === "tablet") {
+      const tabGeo = new THREE.BoxGeometry(1.25, 1.65, 0.07);
+      const tabMesh = new THREE.Mesh(tabGeo, mainMaterial);
+      tabMesh.name = "main";
+      tabMesh.rotation.x = -0.25;
+      group.add(tabMesh);
+
+      const tabScreen = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.5), new THREE.MeshBasicMaterial({ color: 0x020617 }));
+      tabScreen.position.set(0, 0, 0.04);
+      tabScreen.rotation.x = -0.25;
+      group.add(tabScreen);
+    }
+    // ── 10. SERVER / MONITORING SERVER ──
+    else if (node.is_monitoring_server || dType === "server") {
+      const rackGeo = new THREE.BoxGeometry(1.4, 2.2, 1.4);
+      const rackMesh = new THREE.Mesh(rackGeo, mainMaterial);
+      rackMesh.name = "main";
+      group.add(rackMesh);
+
+      // Drive Bay LEDs
+      for (let i = 0; i < 4; i++) {
+        const led = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.1, 0.04), glowAccentMat);
+        led.position.set(0, -0.65 + i * 0.42, 0.72);
+        group.add(led);
+      }
+    }
+    // ── 11. PRINTER ──
+    else if (dType === "printer") {
+      const pBody = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.8, 1.2), mainMaterial);
+      pBody.name = "main";
+      group.add(pBody);
+
+      // Top paper feeder
+      const feeder = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.4, 0.06), darkMaterial);
+      feeder.position.set(0, 0.5, -0.4);
+      feeder.rotation.x = -0.3;
+      group.add(feeder);
+
+      // Front paper tray
+      const tray = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.04, 0.5), darkMaterial);
+      tray.position.set(0, -0.15, 0.8);
+      group.add(tray);
+    }
+    // ── 12. CAMERA / CCTV ──
+    else if (dType === "camera") {
+      const camBody = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.9, 16), mainMaterial);
+      camBody.rotation.x = Math.PI / 3;
+      camBody.name = "main";
+      group.add(camBody);
+
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.1, 16), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+      lens.position.set(0, -0.2, 0.4);
+      lens.rotation.x = Math.PI / 3;
+      group.add(lens);
+    }
+    // ── 13. IOT / SMART DEVICE / SENSOR ──
+    else if (dType === "iot" || dType === "plc" || dType === "smart_meter") {
+      const iotGeo = new THREE.BoxGeometry(0.9, 0.6, 0.7);
+      const iotMesh = new THREE.Mesh(iotGeo, mainMaterial);
+      iotMesh.name = "main";
+      group.add(iotMesh);
+
+      const stubAnt = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.6, 8), darkMaterial);
+      stubAnt.position.set(0.3, 0.5, 0);
+      group.add(stubAnt);
+
+      const centerLED = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), glowAccentMat);
+      centerLED.position.set(0, 0.1, 0.36);
+      group.add(centerLED);
+    }
+    // ── 14. NAS STORAGE ──
+    else if (dType === "nas") {
+      const nasGeo = new THREE.BoxGeometry(1.2, 1.2, 1.2);
+      const nasMesh = new THREE.Mesh(nasGeo, mainMaterial);
+      nasMesh.name = "main";
+      group.add(nasMesh);
+
+      // 4 Drive Caddies
+      for (let i = 0; i < 4; i++) {
+        const caddy = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.85, 0.04), darkMaterial);
+        caddy.position.set(-0.38 + i * 0.25, 0, 0.61);
+        group.add(caddy);
+      }
+    }
+    // ── 15. UNKNOWN DEVICE (Default Fallback) ──
+    else {
+      // Geometric faceted mystery prism with glowing center
+      const unkGeo = new THREE.OctahedronGeometry(0.9, 0);
+      const unkMesh = new THREE.Mesh(unkGeo, mainMaterial);
+      unkMesh.name = "main";
+      group.add(unkMesh);
+
+      const wireUnk = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0), new THREE.MeshBasicMaterial({ color: baseColor, wireframe: true }));
+      wireUnk.name = "spinner";
+      group.add(wireUnk);
     }
 
     return group;
@@ -621,8 +783,10 @@ export default function Topology3DCanvas({
         const isDisconnected = p.node.status === "Disconnected" || p.node.status === "Offline";
         const color = isDisconnected ? "#64748b" : getStatusColor(p.node.status, p.node.risk_level);
         const isSelected = selectedNode?.id === p.node.id;
-        const confidence = p.node.classification_confidence ?? 95;
-        const displayType = confidence < 80 ? "UNKNOWN DEVICE" : p.node.device_type;
+        const displayType = (p.node.device_type || "unknown").toUpperCase();
+        const confLabel = typeof p.node.classification_confidence === "number"
+          ? `${p.node.classification_confidence.toFixed(0)}%`
+          : (p.node.classification_confidence || "Low");
 
         return (
           <div
@@ -652,7 +816,7 @@ export default function Topology3DCanvas({
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: "var(--text-primary)" }}>
               <span>{getDeviceIconSymbol(displayType)}</span>
               <span>{displayType}</span>
-              <span style={{ fontSize: 9, color: "var(--accent-cyan)", fontWeight: 600 }}>({confidence.toFixed(0)}%)</span>
+              <span style={{ fontSize: 9, color: "var(--accent-cyan)", fontWeight: 600 }}>({confLabel})</span>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: color }} />
             </div>
 
