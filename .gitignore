@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 .env
 backend/nids.db
+backend/nids.db-journal backend/nids.db-journal
+backend/*.db-journal
+backend/*.db-wal
+backend/*.db-shm
